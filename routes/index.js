@@ -17,9 +17,13 @@ module.exports = function makeRouterWithSockets (io) {
   // }
 
   function respondWithAllTweetsPOSTGRES (req,res,next){
-    client.query('SELECT * FROM tweets INNER JOIN users ON tweets.userid = users.id', function (err, result) {
+    client.query('SELECT tweets.id as tweetID, users.id, tweets.content, users.name FROM tweets INNER JOIN users ON tweets.userid = users.id', function (err, result) {
       if (err) return next(err); // pass errors to Express
       var tweets = result.rows;
+      for(var i=0;i<result.rows.length;i++){
+        console.log(i,result.rows[i]);
+      }
+      console.log(tweets[0].tweetid);
       res.render('index', { title: 'Twitter.js', tweets: tweets, showForm: true });
     });
   }
@@ -38,7 +42,7 @@ module.exports = function makeRouterWithSockets (io) {
     //   username: req.params.username
     // });
 
-    var query = 'SELECT * FROM tweets INNER JOIN users ON tweets.userid = users.id WHERE users.name = $1'
+    var query = 'SELECT tweets.id as tweetID, users.id, tweets.content, users.name FROM tweets INNER JOIN users ON tweets.userid = users.id WHERE users.name = $1'
 
     client.query(query, [req.params.username],function (err, result) {
       if (err) return next(err); // pass errors to Express
@@ -72,14 +76,31 @@ module.exports = function makeRouterWithSockets (io) {
     // io.sockets.emit('new_tweet', newTweet);
     // res.redirect('/');
 
-
-    var newTweet= 'INSERT INTO Tweets (userId, content) VALUES ((SELECT id from Users WHERE name=$1), $2);'
-
-    client.query(newTweet, [req.body.name, req.body.content],function (err, result) {
-      if (err) return next(err); // pass errors to Express
-      io.sockets.emit('new_tweet', newTweet);
-      res.redirect('/');
+    var query='SELECT (name) FROM users WHERE name=$1';
+    client.query(query,[req.body.name],function (err, result) {
+       //console.log('result',result.rows[0].name);
+       if (err) return next(err); 
+       if(!result.rows[0]){
+          var query='INSERT INTO Users (name) VALUES ($1)';
+          client.query(query,[req.body.name]);
+       }
+      var newTweet= 'INSERT INTO Tweets (userId, content) VALUES ((SELECT id from Users WHERE name=$1), $2);'
+      client.query(newTweet, [req.body.name, req.body.content],function (err, result) {
+        if (err) return next(err); // pass errors to Express
+        console.log(result);
+        var tweetGrabber='SELECT tweets.id as tweetID, tweets.content  FROM tweets';
+        client.query(tweetGrabber,function(err,result){
+          if (err) return next(err);
+          var tweet=result.rows[result.rows.length-1];
+          tweet.name=req.body.name;
+          io.sockets.emit('new_tweet', tweet);
+          res.redirect('/');
+        });
+        
+      });
     });
+
+    
   });
 
   // // replaced this hard-coded route with general static routing in app.js
